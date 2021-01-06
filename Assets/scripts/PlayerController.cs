@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 using UnityEngine.UI;
+using Coffee.UIExtensions;
 public class PlayerController : MonoBehaviour
 {
     [Header("移動速度")]
@@ -34,6 +35,13 @@ public class PlayerController : MonoBehaviour
 
     private Vector3 proneRotation = new Vector3(-90, 0, 0);
 
+    private float attitudeTimer;
+    private float chargeTime = 2.0f;
+
+    public bool isCharge;
+
+    private Animator anim;
+
     [SerializeField, Header("水しぶきのエフェクト")]
     private GameObject splashEffectPrefab = null;
 
@@ -46,6 +54,12 @@ public class PlayerController : MonoBehaviour
     [SerializeField]
     private Button btnChangeAttitude;
 
+    [SerializeField]
+    private Image imgGauge;
+
+    [SerializeField]
+    private ShinyEffectForUGUI shinyEffect;
+
     void Start()
     {
         rb = GetComponent<Rigidbody>();
@@ -56,6 +70,10 @@ public class PlayerController : MonoBehaviour
         attitudeType = AttitudeType.Straight;
 
         btnChangeAttitude.onClick.AddListener(ChangeAttitude);
+
+        btnChangeAttitude.interactable = false;
+
+        anim = GetComponent<Animator>();
     }
 
    
@@ -128,21 +146,76 @@ public class PlayerController : MonoBehaviour
         {
             ChangeAttitude();
         }
+
+        if(isCharge == false && attitudeType == AttitudeType.Straight)
+        {
+            attitudeTimer += Time.deltaTime;
+
+            imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+
+            btnChangeAttitude.interactable = false;
+
+            if(attitudeTimer >= chargeTime)
+            {
+                attitudeTimer = chargeTime;
+
+                //チャージ完了状態
+                isCharge = true;
+                //ボタンを活性化
+                btnChangeAttitude.interactable = true;
+
+                shinyEffect.Play(0.5f);
+            }
+        }
+
+        //姿勢が伏せの状態
+        if(attitudeType == AttitudeType.Prone)
+        {
+            attitudeTimer -= Time.deltaTime;
+            
+            //ゲージ表示を更新
+            imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+
+            //タイマーチャージが０になったら
+            if(attitudeTimer <= 0)
+            {
+                //タイマーをリセットして再度計測できる状態にする
+                attitudeTimer = 0;
+
+                //ボタンを非活性化
+                btnChangeAttitude.interactable = false;
+
+                //強制的に直滑降に戻す
+                ChangeAttitude();
+            }
+        }
     }
 
     private void ChangeAttitude()
     {
         switch (attitudeType)
         {
+            //現在の姿勢が直滑降だったら
             case AttitudeType.Straight:
 
+                //未チャージ状態（チャージ中）なら
+                if(isCharge == false)
+                {
+                    return;
+                }
+
+                //チャージ状態を未チャージ状態にする
+                isCharge = false;
+                //姿勢を伏せに変更
                 attitudeType = AttitudeType.Prone;
-
+                //キャラクターを回転させて伏せ状態にする
                 transform.DORotate(proneRotation, 0.25f, RotateMode.WorldAxisAdd);
-
+                //空気抵抗値を上げて減速させる
                 rb.drag = 25.0f;
-
+                //ボタンの子オブジェクトの画像を回転させる
                 btnChangeAttitude.transform.GetChild(0).DORotate(new Vector3(0, 0, 180), 0.25f);
+
+                anim.SetBool("Prone", true);
 
                 break;
 
@@ -155,6 +228,8 @@ public class PlayerController : MonoBehaviour
                 rb.drag = 0f;
 
                 btnChangeAttitude.transform.GetChild(0).DORotate(new Vector3(0, 0, 90), 0.25f);
+
+                anim.SetBool("Prone", false);
 
                 break;
         }
