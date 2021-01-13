@@ -24,7 +24,8 @@ public class PlayerController : MonoBehaviour
     [Header("現在のキャラの姿勢")]
     public AttitudeType attitudeType;
 
-    private Rigidbody rb;
+    
+    private Rigidbody rb; 
 
     private Vector3 straightRotation = new Vector3(180, 0, 0);
 
@@ -60,6 +61,16 @@ public class PlayerController : MonoBehaviour
     [SerializeField]
     private ShinyEffectForUGUI shinyEffect;
 
+    [SerializeField]
+    private Transform limitLeftBottom;
+
+    [SerializeField]
+    private Transform limitRightTop;
+
+    [SerializeField]
+    private FloatingJoystick joystick;
+
+
     void Start()
     {
         rb = GetComponent<Rigidbody>();
@@ -80,18 +91,18 @@ public class PlayerController : MonoBehaviour
     // Update is called once per frame
     void FixedUpdate()
     {
-        x = Input.GetAxis("Horizontal");
-        z = Input.GetAxis("Vertical");
-        
+        if (inWater == false)
+        {
+            x = Input.GetAxis("Horizontal");
+            z = Input.GetAxis("Vertical");
 
-       //Debug.Log(x);
-       //Debug.Log(z);
+            x = joystick.Horizontal;
+            z = joystick.Vertical;
 
-        //velocityに新しい値を代入して移動
-        rb.velocity = new Vector3(x * moveSpeed, -fallSpeed, z * moveSpeed);
-
-       //Debug.Log(rb.velocity);
-
+            //velocityに新しい値を代入して移動
+            rb.velocity = new Vector3(x * moveSpeed, -fallSpeed, z * moveSpeed);
+        }
+          
     }
     private void OnTriggerEnter(Collider col)
     {
@@ -142,16 +153,23 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (Input.GetKeyDown(KeyCode.Space) && inWater == false)
         {
             ChangeAttitude();
         }
+
+        LimitMoveArea();
 
         if(isCharge == false && attitudeType == AttitudeType.Straight)
         {
             attitudeTimer += Time.deltaTime;
 
-            imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+        
+
+            if (inWater == false)
+            {
+                imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+            }
 
             btnChangeAttitude.interactable = false;
 
@@ -162,7 +180,10 @@ public class PlayerController : MonoBehaviour
                 //チャージ完了状態
                 isCharge = true;
                 //ボタンを活性化
-                btnChangeAttitude.interactable = true;
+                if (isCharge == true && inWater == false)
+                {
+                    btnChangeAttitude.interactable = true;
+                }
 
                 shinyEffect.Play(0.5f);
             }
@@ -172,9 +193,12 @@ public class PlayerController : MonoBehaviour
         if(attitudeType == AttitudeType.Prone)
         {
             attitudeTimer -= Time.deltaTime;
-            
+
             //ゲージ表示を更新
-            imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+            if (inWater == false)
+            {
+                imgGauge.DOFillAmount(attitudeTimer / chargeTime, 0.1f);
+            }
 
             //タイマーチャージが０になったら
             if(attitudeTimer <= 0)
@@ -189,6 +213,8 @@ public class PlayerController : MonoBehaviour
                 ChangeAttitude();
             }
         }
+
+       
     }
 
     private void ChangeAttitude()
@@ -233,5 +259,75 @@ public class PlayerController : MonoBehaviour
 
                 break;
         }
+    }
+    /// <summary>
+    /// 移動範囲の確認と制限
+    /// </summary>
+    private void LimitMoveArea()
+    {
+        //現在のXの位置が移動範囲内に収まっているか確認し、超えていた場合には（左端）か上限に合わせる
+        float limitX = Mathf.Clamp(transform.position.x, limitLeftBottom.position.x, limitRightTop.position.x);
+
+        //現在のZの位置が移動範囲内に収まっているか確認し、超えていた場合には下限（手前側）か上限（奥側）に合わせる
+        float limitZ = Mathf.Clamp(transform.position.z, limitLeftBottom.position.z, limitRightTop.position.z);
+
+        //制限値ないになるように位置情報を更新
+        transform.position = new Vector3(limitX, transform.position.y, limitZ);
+    }
+
+    /// <summary>
+    /// キャラの落下と移動を一時停止
+    /// </summary>
+    public void StopMove()
+    {
+        rb = GetComponent<Rigidbody>();
+
+        //キャラのゲームオブジェクトを物理演算の影響を受けない状態にする
+        rb.isKinematic = true;
+
+        //キャラの速度を０にして停止する
+        rb.velocity = Vector3.zero;
+    }
+
+    /// <summary>
+    /// キャラの落下と移動を再開
+    /// </summary>
+    public void ResumeMove()
+    {
+        //キャラのゲームオブジェクトを物理演算の影響を受ける状態に戻す
+        rb.isKinematic = false;
+
+        //キャラに落下速度を設定する
+        rb.velocity = new Vector3(0, -fallSpeed, 0);
+    }
+
+    /// <summary>
+    /// スコアを半分にする
+    /// </summary>
+    public void HalveScore()
+    {
+        //スコアを半分にする
+        score = Mathf.CeilToInt(score * 0.5f);
+
+        Debug.Log("スコア半分 :" + score);
+
+        //画面のスコア表示を更新
+        txtScore.text = score.ToString();
+    }
+
+    public void DampigDrag(float airResistance)
+    {
+        //空気抵抗の値を更新
+        rb.drag = airResistance;
+
+        //3秒かけて空気抵抗の値を0にする
+        DOTween.To(() => rb.drag, (x) => rb.drag = x, 0, 3.0f)
+            .OnComplete(() =>
+            {
+                if (transform.rotation.x != 1)
+                {
+                    transform.DORotate(straightRotation, 0.25f);
+                }
+            });
     }
 }
